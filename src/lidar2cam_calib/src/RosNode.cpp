@@ -9,6 +9,8 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/Image.h>
@@ -48,6 +50,8 @@ public:
         segmentedCloudPub = nh.advertise<sensor_msgs::PointCloud2>("/segmentedcloud", 10);
 
         featureCloudPub = nh.advertise<sensor_msgs::PointCloud2>("/featurecloud", 10);
+
+        marker_pub = nh.advertise<visualization_msgs::Marker>("/featurecloud_id", 10);
         
 
         // 初始化图像传输
@@ -154,6 +158,33 @@ public:
             pcl::toROSMsg(*featureGround, featureCloudMsg);
             segmentedCloudPub.publish(segmentedCloudMsg);
             featureCloudPub.publish(featureCloudMsg);
+
+            // 添加序号标记（marker）用于 RViz 可视化
+            visualization_msgs::Marker marker;
+            marker.header.frame_id = inputCloud->header.frame_id;
+            marker.header.stamp = ros::Time::now();
+            marker.ns = "ellipse_center_ids";
+            marker.action = visualization_msgs::Marker::ADD;
+            marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING; // 文字始终面向观察者
+            marker.id = 0;
+
+            // 设置 marker 的文字颜色和大小
+            marker.color.r = 128.0 / 255.0;
+            marker.color.g = 0.0;
+            marker.color.b = 128.0 / 255.0;
+            marker.color.a = 1.0;
+            marker.scale.z = 0.2; // 文字大小，根据需要调整
+
+            // 遍历点云中心点并创建 marker
+            for (size_t i = 0; i < lidarCenters.size(); ++i) {
+                marker.pose.position.x = lidarCenters[i].x;
+                marker.pose.position.y = lidarCenters[i].y;
+                marker.pose.position.z = lidarCenters[i].z + 0.1; // 将文字稍微抬高，避免与点重叠
+                marker.text = std::to_string(i); // 序号
+                marker_pub.publish(marker); // 发布 marker
+                marker.id++; // 更新 marker ID，避免覆盖
+            }
+
     
             // 检查点云特征是否形成矩形
             if (extractor.isRectangle3D(lidarCenters)) {
@@ -180,8 +211,14 @@ public:
             vector<cv::Point2f> imageCenters = extractor.detectImageEllipseCenters(gray_image);
 
             cv::Mat feature_image = image.clone();
-            for (const auto& center : imageCenters) {
+            for (size_t i = 0; i < imageCenters.size(); ++i) {
+                const auto& center = imageCenters[i];
                 cv::circle(feature_image, center, 5, cv::Scalar(0, 255, 0), -1);
+                // 绘制点的序号
+                cv::putText(feature_image, std::to_string(i), 
+                            cv::Point(center.x + 10, center.y),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.8,
+                            cv::Scalar(0, 0, 255), 2);
             }
 
             cv_bridge::CvImage cvImage;
@@ -382,6 +419,7 @@ private:
     ros::Publisher accumulatedLaserPub;  //!< 累积点云发布器
     ros::Publisher segmentedCloudPub;
     ros::Publisher featureCloudPub;
+    ros::Publisher marker_pub;  //!< 标记发布器
     vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> laserBuffer;  //!< 点云缓冲区
     size_t maxBufferSize = 30;  //!< 最大缓冲区大小
     std::shared_ptr<Lidar2CamCalib> calib;  //!< 激光雷达到摄像头标定
