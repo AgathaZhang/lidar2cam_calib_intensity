@@ -66,7 +66,8 @@ public:
      * @param lengthThreshold 边长误差阈值
      * @return 是否为3D矩形
      */
-    bool isRectangle3D(const vector<PointType>& points, double lengthThreshold = 0.05);
+    bool isRectangle3D(const vector<PointType>& points, double lengthThreshold = 0.08/* 大标定板0.05*/);
+    // bool isRectangle3D(const vector<PointType>& points, double lengthThreshold = 0.05/* 大标定板0.05*/);
 
     /**
      * @brief 判断点集是否为2D矩形

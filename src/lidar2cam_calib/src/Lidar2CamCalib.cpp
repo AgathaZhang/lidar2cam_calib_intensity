@@ -71,9 +71,9 @@ Lidar2CamCalib::Lidar2CamCalib(const std::string& configPath) {
 
 Eigen::Matrix4d Lidar2CamCalib::calExtrinsic(vector<Point2f> imagePoints, vector<PointType> lidarPoints) {
 
-    int sizeP = lidarPoints.size();
-    Eigen::Matrix3d R = T_LtoC.block(0, 0, 3, 3);
-    Eigen::Quaterniond q(R);
+    int sizeP = lidarPoints.size();                             // 特征点数量
+    Eigen::Matrix3d R = T_LtoC.block(0, 0, 3, 3);               // 初始旋转矩阵
+    Eigen::Quaterniond q(R);                                    // 初始四元数
     double ext[7];
     ext[0] = q.x();
     ext[1] = q.y();
@@ -103,29 +103,30 @@ Eigen::Matrix4d Lidar2CamCalib::calExtrinsic(vector<Point2f> imagePoints, vector
     camera[6] = k3;
     camera[7] = k4;
 
-    Eigen::Map<Eigen::Quaterniond> Q_LtoC = Eigen::Map<Eigen::Quaterniond>(ext);
-    Eigen::Map<Eigen::Vector3d> P_LinC = Eigen::Map<Eigen::Vector3d>(ext + 4);
+    Eigen::Map<Eigen::Quaterniond> Q_LtoC = Eigen::Map<Eigen::Quaterniond>(ext);      // 将 ext[0..3] 映射为四元数，表示 LiDAR → Camera 的旋转（零拷贝，不创建新内存）
+    Eigen::Map<Eigen::Vector3d>    P_LinC = Eigen::Map<Eigen::Vector3d>(ext + 4);    // 将 ext[4..6] 映射为三维向量，表示 LiDAR 在 Camera 坐标系下的平移
 
-    ceres::Manifold* qParameterization = new ceres::EigenQuaternionManifold();
-    ceres::Problem problem;
 
-    problem.AddParameterBlock(ext, 4, qParameterization);
-    problem.AddParameterBlock(ext + 4, 3);
-    problem.AddParameterBlock(camera, 8);
-    problem.SetParameterBlockConstant(camera);
+    ceres::LocalParameterization *qParameterization = new ceres::EigenQuaternionParameterization();// 为四元数参数提供局部参数化（保证更新后仍为单位四元数）
+    ceres::Problem problem;                                                                        // 创建一个 Ceres 优化问题对象，用于装配参数块与残差
 
-    for (int val = 0; val < sizeP; val++) {
-        ceres::CostFunction* costFunction = FactorPrior::Create(
-            lidarPoints[val], imagePoints[val]);
-        problem.AddResidualBlock(costFunction, NULL, ext, ext + 4, camera);
-    }
+    problem.AddParameterBlock(ext, 4, qParameterization);                                          // 添加旋转参数块：ext[0..3] 作为四元数（4维），使用四元数局部参数化更新
+    problem.AddParameterBlock(ext + 4, 3);                                                         // 添加平移参数块：ext[4..6] 作为三维平移向量（3维）
+    problem.AddParameterBlock(camera, 8);                                                          // 添加相机内参/畸变参数块：camera[0..7]（8维）
+    problem.SetParameterBlockConstant(camera);                                                     // 将相机参数设为常量（固定不优化），只优化外参 ext
 
-    ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_SCHUR;
-    options.minimizer_progress_to_stdout = true;
-    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
-    ceres::Solver::Summary summary;
-    ceres::Solve(options, &problem, &summary);
+
+    for (int val = 0; val < sizeP; val++) {                                                             // 遍历所有配对的特征点（第 val 个 3D-2D 对应）
+        ceres::CostFunction* costFunction = FactorPrior::Create(lidarPoints[val], imagePoints[val]);    // 为该对特征点构建一个残差项（代价函数），通常是重投影误差/几何误差
+        problem.AddResidualBlock(costFunction, NULL, ext, ext + 4, camera);                              // 将残差块加入优化问题：优化变量为旋转 ext、平移 ext+4；camera 也传入（此处已被设为常量）
+    }                                                                                                    // 循环结束后，problem 中包含 sizeP 个残差项用于共同约束外参估计
+
+    ceres::Solver::Options options;                                                // 创建 Ceres 求解器配置项，用于设置优化算法与输出行为
+    options.linear_solver_type = ceres::DENSE_SCHUR;                               // 选择线性求解器类型为 Dense Schur（适合重投影类 BA/Schur 结构问题）
+    options.minimizer_progress_to_stdout = true;                                   // 将每次迭代的优化过程信息输出到终端
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;               // 选择信赖域策略为 LM（Levenberg-Marquardt），提高非线性最小二乘的稳定性
+    ceres::Solver::Summary summary;                                                // 用于保存求解结果摘要（迭代次数、收敛情况、最终代价等）
+    ceres::Solve(options, &problem, &summary);                                     // 调用 Ceres 执行求解，对 problem 中的参数块（主要是外参 ext）进行非线性优化
 
     Eigen::Matrix3d R_LtoC = Q_LtoC.toRotationMatrix();
     T_LtoC.block(0, 0, 3, 3) = R_LtoC;

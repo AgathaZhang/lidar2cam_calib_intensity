@@ -38,14 +38,14 @@ public:
         
         setParameters(configPath);
 
-        calib = std::make_shared<Lidar2CamCalib>(configPath);
+        calib = std::make_shared<Lidar2CamCalib>(configPath);   // 初始化标定类
         nh = ros::NodeHandle("~");
 
         // 订阅激光雷达数据
-        laserSub = nh.subscribe(lidarTopic, 10, &RosNode::laserCallback, this);
+        laserSub = nh.subscribe(lidarTopic, 10, &RosNode::laserCallback, this);     // 成员函数 指针写法
 
-        // 发布累积点云数据
-        accumulatedLaserPub = nh.advertise<sensor_msgs::PointCloud2>("/livox/lidar/sum", 10);
+        // 发布累积点云数据 定义发布者
+        accumulatedLaserPub = nh.advertise<sensor_msgs::PointCloud2>("/livox/lidar/sum", 10);       // 30帧合成点云
 
         segmentedCloudPub = nh.advertise<sensor_msgs::PointCloud2>("/segmentedcloud", 10);
 
@@ -55,7 +55,7 @@ public:
         
 
         // 初始化图像传输
-        image_transport::ImageTransport it(nh);
+        image_transport::ImageTransport it(nh);     // 图像传输对象
         imagePub = it.advertise("/usb_cam_left/image_undis", 1);
         feature_imagePub = it.advertise("/feature_image", 1);
 
@@ -136,20 +136,21 @@ public:
      * @param laserMsg 点云消息
      * @param imageMsg 图像消息
      */
-    void syncCallback(const sensor_msgs::PointCloud2::ConstPtr& laserMsg, const sensor_msgs::ImageConstPtr& imageMsg) {
+    // TODO 12.24 14：40
+    void syncCallback(const sensor_msgs::PointCloud2::ConstPtr& laserMsg/*点云消息*/, const sensor_msgs::ImageConstPtr& imageMsg/*图像消息*/) {
         if (!calibStart) {
             // 点云处理
             pcl::PointCloud<pcl::PointXYZI>::Ptr inputCloud(new pcl::PointCloud<pcl::PointXYZI>);
             pcl::fromROSMsg(*laserMsg, *inputCloud);
     
             vector<PointXYZI> lidarCenters = extractor.detectLidarEllipseCenters(inputCloud);
-            pcl::PointCloud<pcl::PointXYZI>::Ptr segmentedGround = extractor.getSegmentedGround();
-            pcl::PointCloud<pcl::PointXYZI>::Ptr featureGround(new pcl::PointCloud<pcl::PointXYZI>);
+            pcl::PointCloud<pcl::PointXYZI>::Ptr segmentedGround = extractor.getSegmentedGround();      // 获取分割后的地面点云
+            pcl::PointCloud<pcl::PointXYZI>::Ptr featureGround(new pcl::PointCloud<pcl::PointXYZI>);    // 用于存储特征点云
             // 遍历 vector 并将点添加到 PCL 点云中
             for (const auto& point : lidarCenters) {
                 featureGround->push_back(point);
             }
-            segmentedGround->header = inputCloud->header;
+            segmentedGround->header = inputCloud->header;       // 保持点云头信息一致
             featureGround->header = inputCloud->header;
 
             // 发布分割后的点云
@@ -270,7 +271,7 @@ public:
                     imageAvgCenters[j].x += imageCentersBuff[i + j].x;
                     imageAvgCenters[j].y += imageCentersBuff[i + j].y;
                 }
-            }
+            }   // 把缓存里多帧的 4 个圆心（LiDAR 3D 圆心、图像 2D 圆心）按“同序号 j=0..3”分别累加起来，为后面做 多帧平均/融合 做准备
 
             for (int j = 0; j < 4; ++j) {
                 lidarAvgCenters[j].x /= (lidarCentersBuff.size() / 4);
@@ -301,7 +302,7 @@ public:
             cout << "Lidar Feature Size: " << lidarAvgCentersBuff.size() / 4 << endl;
             cout << "Do you want to start calibration now? (y/n): ";
             cin >> userChoice;
-
+            // TODO 计算重投影误差 12.25 下午
             if (userChoice == 'y' || userChoice == 'Y') {
                 // 使用当前的平均值进行标定
                 Eigen::Matrix4d T_LtoC = calib->calExtrinsic(imageAvgCentersBuff, lidarAvgCentersBuff);
@@ -344,7 +345,7 @@ public:
     void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
         try {
             cv_bridge::CvImagePtr cvPtr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-
+            cv::imwrite("/home/kilox/workspace/lidar2cam_calib_ws/src/lidar2cam_calib/src/undistorted.png", cvPtr->image);
             cv::Mat undistorted = undistortImage(cvPtr->image);
 
             cv_bridge::CvImage cvImage;
@@ -352,7 +353,7 @@ public:
             cvImage.header.frame_id = "camera";
             cvImage.encoding = sensor_msgs::image_encodings::BGR8;
             cvImage.image = undistorted;
-
+            
             imagePub.publish(cvImage.toImageMsg());
         } catch (cv_bridge::Exception& e) {
             ROS_ERROR("cv_bridge exception: %s", e.what());
@@ -371,7 +372,7 @@ public:
         pcl::PointCloud<pcl::PointXYZI>::Ptr accumulatedCloud(new pcl::PointCloud<pcl::PointXYZI>);
 
         for (auto& cloud : laserBuffer) {
-            *accumulatedCloud += *cloud;
+            *accumulatedCloud += *cloud;                // 累积点云 30 帧合起来
         }
 
         accumulatedCloud->header = laserBuffer.back()->header;
@@ -411,32 +412,32 @@ public:
     }
 
 private:
-    ros::NodeHandle nh;  //!< ROS节点句柄
-    ros::Subscriber laserSub;  //!< 激光雷达订阅器
-    image_transport::Publisher imagePub;  //!< 图像发布器
-    image_transport::Publisher feature_imagePub;  //!< 图像特征发布器
-    image_transport::Subscriber imageSub;  //!< 图像订阅器
-    ros::Publisher accumulatedLaserPub;  //!< 累积点云发布器
-    ros::Publisher segmentedCloudPub;
-    ros::Publisher featureCloudPub;
-    ros::Publisher marker_pub;  //!< 标记发布器
+    ros::NodeHandle nh;                              //!< ROS节点句柄
+    ros::Subscriber laserSub;                        //!< 激光雷达订阅器
+    image_transport::Publisher imagePub;             //!< 图像发布器
+    image_transport::Publisher feature_imagePub;     //!< 图像特征发布器
+    image_transport::Subscriber imageSub;            //!< 图像订阅器
+    ros::Publisher accumulatedLaserPub;              //!< 累积点云发布器
+    ros::Publisher segmentedCloudPub;                //!< 分割点云发布器
+    ros::Publisher featureCloudPub;                  //!< 特征点云发布器
+    ros::Publisher marker_pub;                       //!< 标记发布器
     vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> laserBuffer;  //!< 点云缓冲区
-    size_t maxBufferSize = 30;  //!< 最大缓冲区大小
-    std::shared_ptr<Lidar2CamCalib> calib;  //!< 激光雷达到摄像头标定
-    Eigen::Matrix3d cameraIntrinsic;
-    Eigen::Vector4d cameraDistcoff;
+    size_t maxBufferSize = 30;                       //!< 最大缓冲区大小
+    std::shared_ptr<Lidar2CamCalib> calib;           //!< 激光雷达到摄像头标定
+    Eigen::Matrix3d cameraIntrinsic;                 //!< 摄像头内参矩阵
+    Eigen::Vector4d cameraDistcoff;                  //!< 摄像头畸变系数
     string lidarTopic;
     string cameraTopic;
-    message_filters::Subscriber<sensor_msgs::PointCloud2> accumulatedLaserSub;
-    message_filters::Subscriber<sensor_msgs::Image> undisImageSub;
-    boost::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync;
-    FeatureExtractor extractor;
-    vector<cv::Point2f> imageCentersBuff;
-    vector<PointXYZI> lidarCentersBuff;
-    vector<cv::Point2f> imageAvgCentersBuff;
-    vector<PointXYZI> lidarAvgCentersBuff;
-    bool calibStart = false;
-    int collectionSize = 1;
+    message_filters::Subscriber<sensor_msgs::PointCloud2> accumulatedLaserSub;              //!< 累积点云订阅器
+    message_filters::Subscriber<sensor_msgs::Image> undisImageSub;                          //!< 畸变图像订阅器
+    boost::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync;                      //!< 同步器
+    FeatureExtractor extractor;                         //!< 特征提取器        
+    vector<cv::Point2f> imageCentersBuff;               //!< 图像特征缓冲区
+    vector<PointXYZI> lidarCentersBuff;                 //!< 点云特征缓冲区
+    vector<cv::Point2f> imageAvgCentersBuff;            //!< 图像平均特征缓冲区
+    vector<PointXYZI> lidarAvgCentersBuff;              //!< 点云平均特征缓冲区
+    bool calibStart = false;                            //!< 标定开始标志
+    int collectionSize = 1;                             //!< 需要收集的特征组数    
 };
 
 /**

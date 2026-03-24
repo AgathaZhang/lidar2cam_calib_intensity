@@ -5,7 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(OpenCV_DIR "/home/kilox/workspace/3rdparty/opencv-4.5.5/lib/cmake/opencv4")
 find_package(OpenCV REQUIRED)
+set(cv_bridge_DIR "/home/kilox/workspace/3rdparty/cv_bridge/share/cv_bridge/cmake")
+find_package(cv_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(PCL REQUIRED)
@@ -13,7 +16,6 @@ find_package(yaml-cpp REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rosbag
-  cv_bridge
   pcl_ros
   pcl_conversions
   sensor_msgs
@@ -28,7 +30,6 @@ catkin_package(
   CATKIN_DEPENDS
     roscpp
     rosbag
-    cv_bridge
     pcl_ros
     pcl_conversions
     sensor_msgs
@@ -46,6 +47,7 @@ include_directories(
     ${CERES_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
     ${YAML_CPP_INCLUDE_DIRS}
+    ${cv_bridge_INCLUDE_DIRS}
 )
 
 add_library(FeatureExtractor SHARED src/FeatureExtractor.cpp)
@@ -76,6 +78,7 @@ target_link_libraries(RosNode
   ${PCL_LIBRARIES}
   ${Eigen3_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
+  ${cv_bridge_LIBRARIES}
 )
 
 # add_executable(test test.cpp)
