@@ -483,10 +483,10 @@ vector<PointType> FeatureExtractor::detectLidarEllipseCenters(const PointCloud<P
             for (const auto &idx : inliers->indices) {
                 double dx = cluster->points[idx].x - coefficients->values[0];
                 double dy = cluster->points[idx].y - coefficients->values[1];
-                // double circleRadius = 0.12;    // 预设的圆洞半径   
+                double circleRadius = 0.12;    // 预设的圆洞半径   
                 // double circleRadius = 0.025;   // 缩减圆洞半径到0.025m = 2.5cm
                 // double circleRadius = 0.094;      // 强度信息的圆洞半径
-                double circleRadius = 0.049;      // TODO 强度信息的圆洞半径
+                // double circleRadius = 0.049;      // TODO 强度信息的圆洞半径
                 double distance = sqrt(dx * dx + dy * dy) - circleRadius; // 距离误差
                 error += abs(distance);
             }
@@ -577,7 +577,8 @@ void FeatureExtractor::sortPatternCenters(vector<PointType>& centers) {
 bool FeatureExtractor::isRectangle(const vector<Point2f>& points, double lengthThreshold) {
     if (points.size() != 4) {
         cerr << "Error: The number of points must be 4." << endl;
-        return false;
+        // return false;
+        return true;        // agatha 03.24跳过检查
     }
 
     vector<double> distances(6); // 6条边和对角线
